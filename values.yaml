@@ -1,0 +1,47 @@
+namespace: local
+
+deployment:
+  type: blue
+  replicaCount: 1
+  image:
+    repository: docker.elastic.co/elasticsearch/elasticsearch
+    tag: "7.15.2"
+  initContainers:
+    initData:
+      enable: false
+  containers:
+    default:
+      ports:
+        http: 9200
+        transport: 9300
+      readinessProbe:
+        initialDelaySeconds: 30
+        periodSeconds: 5
+      livenessProbe:
+        initialDelaySeconds: 30
+        periodSeconds: 5
+
+service:
+  type: ClusterIP
+  port:
+    http: 9200
+    transport: 9300
+
+pvc:
+  name: aergoscan-es-default-claim
+  
+env:
+  discovery:
+    type: "single-node"
+  xpack:
+    security:
+      enabled: "false"
+  bootstrap:
+    memory_lock: "true"
+  ES_JAVA_OPTS: "-Xms1024m -Xmx1024m"
+
+indexer:
+  name: aergoscan-indexer
+
+api:
+  name: aergoscan-api

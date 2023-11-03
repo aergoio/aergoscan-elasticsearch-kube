@@ -1,0 +1,98 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    environment: {{ .Values.namespace }}
+spec:
+  replicas: {{ .Values.deployment.replicaCount }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      environment: {{ .Values.namespace }}
+      app: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        environment: {{ .Values.namespace }}
+        app: {{ .Release.Name }}
+    spec:
+{{- if ne .Values.namespace "local" }}
+      nodeSelector:
+        eks.amazonaws.com/nodegroup: {{ .Values.deployment.nodeSelector.eks.nodeGroup }}
+{{- end }}
+      initContainers:
+{{- if .Values.deployment.initContainers.initData.enable }}
+        - name: init-data
+          image: alpine:3.18.4
+          command:
+            - rm
+            - -rf
+            - /elasticsearch-data/nodes
+          volumeMounts:
+            - name: data
+              mountPath: /elasticsearch-data
+{{- end }}
+        - name: init-volume-owner
+          image: alpine:3.18.4
+          command:
+            - chown
+            - -R
+            - 1000:root
+            - /elasticsearch-data
+          volumeMounts:
+            - name: data
+              mountPath: /elasticsearch-data
+      containers:
+        - name: {{ .Release.Name }}
+          image: {{ .Values.deployment.image.repository }}:{{ .Values.deployment.image.tag }}
+          securityContext:
+            runAsUser: 1000
+          ports:
+            - name: "http"
+              containerPort: {{ .Values.deployment.containers.default.ports.http }}
+            - name: "transport"
+              containerPort: {{ .Values.deployment.containers.default.ports.transport }}
+          env:
+            - name: discovery.type
+              value: {{ .Values.env.discovery.type }}
+            - name: xpack.security.enabled
+              value: "{{ .Values.env.xpack.security.enabled }}"
+            - name: bootstrap.memory_lock
+              value: "{{ .Values.env.bootstrap.memory_lock }}"
+{{- if eq .Values.namespace "local" }}
+            - name: ES_JAVA_OPTS
+              value: "-Xms1024m -Xmx1024m"
+{{- end }}
+          readinessProbe:
+            httpGet:
+              path: /
+              port: {{ .Values.deployment.containers.default.ports.http }}
+            initialDelaySeconds: {{ .Values.deployment.containers.default.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.deployment.containers.default.readinessProbe.periodSeconds }}
+          livenessProbe:
+            httpGet:
+              path: /
+              port: {{ .Values.deployment.containers.default.ports.http }}
+            initialDelaySeconds: {{ .Values.deployment.containers.default.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.deployment.containers.default.livenessProbe.periodSeconds }}
+{{- if ne .Values.namespace "local" }}
+          resources:
+            requests:
+              cpu: {{ .Values.deployment.containers.default.resources.requests.cpu }}
+              memory: {{ .Values.deployment.containers.default.resources.requests.memory }}
+            limits:
+              cpu: {{ .Values.deployment.containers.default.resources.limits.cpu }}
+              memory: {{ .Values.deployment.containers.default.resources.limits.memory }}
+{{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: /usr/share/elasticsearch/data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ .Values.pvc.name }}-{{ .Values.deployment.type }}
+
+
